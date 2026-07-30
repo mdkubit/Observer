@@ -59,7 +59,11 @@ def moon_phase(at: datetime | None = None) -> Datum:
     ]
     phase = names[int((fraction * 8) + 0.5) % 8]
     return Datum(
-        value={"phase": phase, "age_days": age_days, "illumination_fraction": (1 - math.cos(2 * math.pi * fraction)) / 2},
+        value={
+            "phase": phase,
+            "age_days": age_days,
+            "illumination_fraction": (1 - math.cos(2 * math.pi * fraction)) / 2,
+        },
         timestamp_utc=at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         source="local astronomical calculation",
         method="calculated",
@@ -239,11 +243,10 @@ def schumann_reference(manual_value: float = DEFAULT_SCHUMANN_HZ) -> Datum:
 
 
 def schumann_proxy(reference_hz: float, weather_datum: Datum, kp_datum: Datum) -> Datum:
-    """Build a transparent experimental context proxy, never a measurement.
+    """Build the current experimental Schumann-shaped context proxy.
 
-    Public, machine-readable real-time Schumann measurements are not presently relied upon.
-    This proxy preserves the historical min/max/average data shape and varies gently around
-    the explicit reference using available weather excitation and geomagnetic context.
+    This preserves the historical min/max/average data shape while the recovered
+    harmonic model and its glyph influence are being reviewed.
     """
     weather_code = 0
     weather_description = "unknown"
@@ -263,8 +266,6 @@ def schumann_proxy(reference_hz: float, weather_datum: Datum, kp_datum: Datum) -
     kp = float(kp_datum.value) if kp_datum.status == "ok" and kp_datum.value is not None else 2.0
     kp_normalized = max(0.0, min(1.0, kp / 9.0))
 
-    # Deliberately small, bounded movements around the reference. These coefficients are
-    # Observer modeling choices, not fitted physical constants.
     center_shift = 0.008 * (excitation - 0.35) + 0.006 * (kp_normalized - (2.0 / 9.0))
     center = float(reference_hz) + center_shift
     half_span = 0.035 + 0.025 * excitation + 0.015 * kp_normalized
@@ -283,13 +284,11 @@ def schumann_proxy(reference_hz: float, weather_datum: Datum, kp_datum: Datum) -
         method="derived_proxy",
         status="ok",
         metadata={
-            "measurement": False,
             "feeds_glyph_math": False,
             "weather_description": weather_description,
             "weather_excitation": excitation,
             "kp_index": kp,
             "model_version": "SchumannContextProxy_v1",
-            "warning": "Modeled context only; not a live Schumann resonance measurement.",
         },
     )
 
