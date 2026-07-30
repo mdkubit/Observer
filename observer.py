@@ -329,7 +329,7 @@ class ObserverEngine:
 
         Observe the attached glyph and the Earth-side packet below as the next event in one continuous narrative.
         Preserve accepted continuity. Build boldly through cause, consequence, rising action, climax, and aftermath.
-        Do not flatten strange events into safe summaries, and do not force a predetermined outcome.
+        Let the observed conditions determine the direction, then commit fully to rising action, climax, consequence, and continued expansion.
         The prior coherence and entanglement values are context, not automatic progression.
 
         Return a committed narrative observation followed by exactly one JSON object:
@@ -491,8 +491,20 @@ class ObserverApp(tk.Tk):
         )
         self.glyph_label = ttk.Label(right, text="Glyph preview will appear here", anchor="center")
         self.glyph_label.pack(fill="both", expand=True)
-        self.prompt_box = tk.Text(right, height=13, wrap="word")
-        self.prompt_box.pack(fill="x", pady=(8, 0))
+        prompt_frame = ttk.Frame(right)
+        prompt_frame.pack(fill="both", expand=True, pady=(8, 0))
+
+        self.prompt_box = tk.Text(prompt_frame, height=13, wrap="word")
+        prompt_scrollbar = ttk.Scrollbar(
+            prompt_frame,
+            orient="vertical",
+            command=self.prompt_box.yview,
+        )
+
+        self.prompt_box.configure(yscrollcommand=prompt_scrollbar.set)
+
+        self.prompt_box.pack(side="left", fill="both", expand=True)
+        prompt_scrollbar.pack(side="right", fill="y")
 
     def cast(self) -> None:
         try:
