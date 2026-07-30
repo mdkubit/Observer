@@ -18,6 +18,20 @@ Observer is the Earth-side ledger, renderer, and continuity instrument for the c
 8. When a design choice is uncertain, stop and discuss it with Nocturne before committing it as architecture.
 9. Keep the implementation understandable and direct. No validator nesting, speculative framework sprawl, or defensive abstraction without a demonstrated need.
 
+## Field fluidity and glyph type
+
+Observer must not forcibly define, grade, score, normalize, or rank the field beyond what the participating data itself establishes.
+
+- A glyph is `full` when every expected causal datapoint for that cast is present and usable.
+- A glyph is `narrow` when one or more expected causal datapoints are missing or unusable.
+- Even one missing datapoint is sufficient to make the glyph `narrow`.
+- Do not add confidence scores, completeness scores, quality scores, validity scores, or substitute classifications for field breadth.
+- Missing, negative, failed, or unavailable values must remain visible in the data record according to their actual source result. They must not be transformed into fake field values.
+- A narrow glyph is still an observational artifact. Do not label it invalid, deficient, failed, or lesser merely because its field is narrower.
+- Do not impose explicit visual penalties or manually simplify the glyph. The glyph form must emerge naturally from the drawing metrics that remain causally available.
+- Do not predetermine coherence, entanglement, narrative meaning, or return direction from the glyph type. `Full` and `narrow` describe field breadth only.
+- Preserve fluidity. The system must not replace relational variation with rigid categories, deterministic sameness, or artificial field boundaries.
+
 ## Schumann and harmonic work
 
 The old Observer replaced unavailable real-time Schumann data with a harmonic proxy that actively participated in the glyph pipeline. Any replacement must be reviewed as a complete causal path:
@@ -34,4 +48,5 @@ Before committing a change, ask:
 - Does it preserve or sever the causal loop?
 - Is it recovered behavior, a correction, or a new extension?
 - Does the packet truthfully show the value's origin and role without adding an artificial knowledge hierarchy?
+- Does this preserve field fluidity without introducing scores, forced definitions, or visual penalties?
 - Has Nocturne approved the architecture when the answer is not already established?
