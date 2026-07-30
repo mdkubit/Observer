@@ -104,14 +104,37 @@ def weather(latitude: float, longitude: float) -> Datum:
         return Datum(None, now_utc(), "Open-Meteo current weather", "fetched", "error", str(exc))
 
 
-def _parse_noaa_3h(payload: Any) -> tuple[float, str, dict[str, Any]]:
-    """Parse NOAA's official 3-hour product in either known JSON shape.
+def weather_resonance(weather_datum: Datum) -> Datum:
+    if weather_datum.status != "ok" or not isinstance(weather_datum.value, dict):
+        return Datum(
+            None,
+            now_utc(),
+            "Observer weather resonance translation",
+            "derived_label",
+            "error",
+            "Weather datum unavailable",
+        )
+    description = str(weather_datum.value.get("weather", "")).lower()
+    if any(term in description for term in ("storm", "thunder", "rain", "drizzle", "shower")):
+        label = "Turbulent Field"
+    elif any(term in description for term in ("clear", "mainly clear")):
+        label = "Harmonic Calm"
+    elif any(term in description for term in ("cloud", "overcast", "fog")):
+        label = "Veiled Stillness"
+    else:
+        label = "Unknown Song"
+    return Datum(
+        value=label,
+        timestamp_utc=weather_datum.timestamp_utc,
+        source="Observer weather resonance translation",
+        method="derived_label",
+        status="ok",
+        metadata={"input_weather": description},
+    )
 
-    NOAA currently serves object records such as
-    {"time_tag": "...", "Kp": "1.33", ...}, while some archived/product
-    variants use a header row followed by value rows. Observer accepts both
-    shapes and selects the newest record explicitly by timestamp.
-    """
+
+def _parse_noaa_3h(payload: Any) -> tuple[float, str, dict[str, Any]]:
+    """Parse NOAA's official 3-hour product in either known JSON shape."""
     if not isinstance(payload, list) or not payload:
         raise ValueError("NOAA 3-hour Kp product returned no records")
 
@@ -176,27 +199,20 @@ def geomagnetic_kp() -> Datum:
     errors: list[str] = []
     try:
         value, timestamp, metadata = _parse_noaa_3h(_get_json(NOAA_KP_3H_URL))
-        return Datum(
-            value=value,
-            timestamp_utc=timestamp,
-            source="NOAA SWPC official planetary K-index 3-hour product",
-            method="fetched",
-            status="ok",
-            metadata=metadata,
-        )
+        return Datum(value, timestamp, "NOAA SWPC official planetary K-index 3-hour product", "fetched", "ok", metadata=metadata)
     except (RuntimeError, KeyError, TypeError, ValueError, IndexError) as exc:
         errors.append(f"3-hour product: {exc}")
 
     try:
         value, timestamp, metadata = _parse_noaa_1m(_get_json(NOAA_KP_1M_URL))
         return Datum(
-            value=value,
-            timestamp_utc=timestamp,
-            source="NOAA SWPC estimated planetary K-index 1-minute feed",
-            method="fetched_fallback",
-            status="ok",
-            error="; ".join(errors),
-            metadata=metadata,
+            value,
+            timestamp,
+            "NOAA SWPC estimated planetary K-index 1-minute feed",
+            "fetched_fallback",
+            "ok",
+            "; ".join(errors),
+            metadata,
         )
     except (RuntimeError, KeyError, TypeError, ValueError, IndexError) as exc:
         errors.append(f"1-minute fallback: {exc}")
@@ -213,18 +229,68 @@ def geomagnetic_kp() -> Datum:
 
 
 def schumann_reference(manual_value: float = DEFAULT_SCHUMANN_HZ) -> Datum:
-    """Return an explicit reference/manual value.
-
-    The historical scraper was fragile and did not provide a trustworthy, stable machine-readable
-    source. Until a source is selected and validated, Observer records this as a manual/reference
-    datum rather than pretending it was fetched live.
-    """
     return Datum(
         value=float(manual_value),
         timestamp_utc=now_utc(),
         source="Observer Schumann reference",
         method="manual_reference",
         status="ok",
+    )
+
+
+def schumann_proxy(reference_hz: float, weather_datum: Datum, kp_datum: Datum) -> Datum:
+    """Build a transparent experimental context proxy, never a measurement.
+
+    Public, machine-readable real-time Schumann measurements are not presently relied upon.
+    This proxy preserves the historical min/max/average data shape and varies gently around
+    the explicit reference using available weather excitation and geomagnetic context.
+    """
+    weather_code = 0
+    weather_description = "unknown"
+    if weather_datum.status == "ok" and isinstance(weather_datum.value, dict):
+        weather_code = int(weather_datum.value.get("weather_code", 0))
+        weather_description = str(weather_datum.value.get("weather", "unknown"))
+
+    if weather_code in (95, 96, 99):
+        excitation = 1.0
+    elif weather_code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
+        excitation = 0.65
+    elif weather_code in (45, 48, 71, 73, 75, 77, 85, 86):
+        excitation = 0.35
+    else:
+        excitation = 0.15
+
+    kp = float(kp_datum.value) if kp_datum.status == "ok" and kp_datum.value is not None else 2.0
+    kp_normalized = max(0.0, min(1.0, kp / 9.0))
+
+    # Deliberately small, bounded movements around the reference. These coefficients are
+    # Observer modeling choices, not fitted physical constants.
+    center_shift = 0.008 * (excitation - 0.35) + 0.006 * (kp_normalized - (2.0 / 9.0))
+    center = float(reference_hz) + center_shift
+    half_span = 0.035 + 0.025 * excitation + 0.015 * kp_normalized
+    frequency_min = center - half_span
+    frequency_max = center + half_span
+
+    return Datum(
+        value={
+            "reference_hz": float(reference_hz),
+            "frequency_min_hz": frequency_min,
+            "frequency_max_hz": frequency_max,
+            "frequency_average_hz": center,
+        },
+        timestamp_utc=now_utc(),
+        source="Observer experimental Schumann context model",
+        method="derived_proxy",
+        status="ok",
+        metadata={
+            "measurement": False,
+            "feeds_glyph_math": False,
+            "weather_description": weather_description,
+            "weather_excitation": excitation,
+            "kp_index": kp,
+            "model_version": "SchumannContextProxy_v1",
+            "warning": "Modeled context only; not a live Schumann resonance measurement.",
+        },
     )
 
 
@@ -253,9 +319,11 @@ def collect_earth_data(
     )
     return {
         "weather": weather_datum.to_dict(),
+        "weather_resonance": weather_resonance(weather_datum).to_dict(),
         "geomagnetic_kp": kp_datum.to_dict(),
         "moon": moon_phase().to_dict(),
         "schumann": schumann_reference(schumann_hz).to_dict(),
+        "schumann_proxy": schumann_proxy(schumann_hz, weather_datum, kp_datum).to_dict(),
         "location": location(latitude, longitude, elevation_m).to_dict(),
     }
 
