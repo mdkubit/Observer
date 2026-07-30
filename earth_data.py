@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -12,7 +11,8 @@ from urllib.request import Request, urlopen
 
 USER_AGENT = "Universal-Horizon-Observer/0.2"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-NOAA_KP_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
+NOAA_KP_3H_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+NOAA_KP_1M_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 DEFAULT_SCHUMANN_HZ = 7.83
 
 
@@ -24,6 +24,7 @@ class Datum:
     method: str
     status: str
     error: str | None = None
+    metadata: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -103,21 +104,88 @@ def weather(latitude: float, longitude: float) -> Datum:
         return Datum(None, now_utc(), "Open-Meteo current weather", "fetched", "error", str(exc))
 
 
+def _parse_noaa_3h(payload: Any) -> tuple[float, str, dict[str, Any]]:
+    if not isinstance(payload, list) or len(payload) < 2:
+        raise ValueError("NOAA 3-hour Kp product returned no records")
+    header = payload[0]
+    if not isinstance(header, list):
+        raise ValueError("NOAA 3-hour Kp product header is missing")
+    rows = [row for row in payload[1:] if isinstance(row, list) and len(row) >= 2]
+    if not rows:
+        raise ValueError("NOAA 3-hour Kp product contains no usable rows")
+    fields = {name: index for index, name in enumerate(header)}
+    time_index = fields.get("time_tag", 0)
+    kp_index = fields.get("Kp", 1)
+    latest = max(rows, key=lambda row: str(row[time_index]))
+    value = float(latest[kp_index])
+    if not 0.0 <= value <= 9.0:
+        raise ValueError(f"NOAA 3-hour Kp value out of range: {value}")
+    timestamp = str(latest[time_index]).replace(" ", "T")
+    metadata = {
+        "product": "official_3_hour_kp",
+        "a_running": latest[fields["a_running"]] if "a_running" in fields and len(latest) > fields["a_running"] else None,
+        "station_count": latest[fields["station_count"]] if "station_count" in fields and len(latest) > fields["station_count"] else None,
+    }
+    return value, timestamp, metadata
+
+
+def _parse_noaa_1m(payload: Any) -> tuple[float, str, dict[str, Any]]:
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("NOAA 1-minute Kp product returned no records")
+    records = [item for item in payload if isinstance(item, dict) and item.get("time_tag")]
+    if not records:
+        raise ValueError("NOAA 1-minute Kp product contains no usable records")
+    latest = max(records, key=lambda item: str(item["time_tag"]))
+    field_used = "estimated_kp" if latest.get("estimated_kp") is not None else "kp_index"
+    value = float(latest[field_used])
+    if not 0.0 <= value <= 9.0:
+        raise ValueError(f"NOAA 1-minute Kp value out of range: {value}")
+    return value, str(latest["time_tag"]), {
+        "product": "estimated_1_minute_kp",
+        "field_used": field_used,
+        "estimated_kp": latest.get("estimated_kp"),
+        "kp_index": latest.get("kp_index"),
+    }
+
+
 def geomagnetic_kp() -> Datum:
+    errors: list[str] = []
     try:
-        payload = _get_json(NOAA_KP_URL)
-        if not isinstance(payload, list) or not payload:
-            raise ValueError("No Kp records returned")
-        latest = payload[-1]
+        value, timestamp, metadata = _parse_noaa_3h(_get_json(NOAA_KP_3H_URL))
         return Datum(
-            value=float(latest["kp_index"]),
-            timestamp_utc=str(latest.get("time_tag", now_utc())).replace("+00:00", "Z"),
-            source="NOAA SWPC planetary K-index 1-minute feed",
+            value=value,
+            timestamp_utc=timestamp,
+            source="NOAA SWPC official planetary K-index 3-hour product",
             method="fetched",
             status="ok",
+            metadata=metadata,
         )
-    except (RuntimeError, KeyError, TypeError, ValueError) as exc:
-        return Datum(None, now_utc(), "NOAA SWPC planetary K-index 1-minute feed", "fetched", "error", str(exc))
+    except (RuntimeError, KeyError, TypeError, ValueError, IndexError) as exc:
+        errors.append(f"3-hour product: {exc}")
+
+    try:
+        value, timestamp, metadata = _parse_noaa_1m(_get_json(NOAA_KP_1M_URL))
+        return Datum(
+            value=value,
+            timestamp_utc=timestamp,
+            source="NOAA SWPC estimated planetary K-index 1-minute feed",
+            method="fetched_fallback",
+            status="ok",
+            error="; ".join(errors),
+            metadata=metadata,
+        )
+    except (RuntimeError, KeyError, TypeError, ValueError, IndexError) as exc:
+        errors.append(f"1-minute fallback: {exc}")
+
+    return Datum(
+        None,
+        now_utc(),
+        "NOAA SWPC planetary K-index products",
+        "fetched",
+        "error",
+        "; ".join(errors),
+        {"attempted_products": ["official_3_hour_kp", "estimated_1_minute_kp"]},
+    )
 
 
 def schumann_reference(manual_value: float = DEFAULT_SCHUMANN_HZ) -> Datum:
@@ -157,7 +225,7 @@ def collect_earth_data(
         None, now_utc(), "Open-Meteo current weather", "fetched", "disabled", "Live fetch disabled"
     )
     kp_datum = geomagnetic_kp() if fetch_live else Datum(
-        None, now_utc(), "NOAA SWPC planetary K-index 1-minute feed", "fetched", "disabled", "Live fetch disabled"
+        None, now_utc(), "NOAA SWPC planetary K-index products", "fetched", "disabled", "Live fetch disabled"
     )
     return {
         "weather": weather_datum.to_dict(),
