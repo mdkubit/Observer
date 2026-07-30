@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
-from earth_data import collect_earth_data, moon_phase, schumann_reference, usable_value
+from earth_data import (
+    _parse_noaa_1m,
+    _parse_noaa_3h,
+    collect_earth_data,
+    geomagnetic_kp,
+    moon_phase,
+    schumann_reference,
+    usable_value,
+)
 
 
 class EarthDataTests(unittest.TestCase):
@@ -31,6 +40,40 @@ class EarthDataTests(unittest.TestCase):
     def test_usable_value_never_promotes_error_payloads(self) -> None:
         datum = {"value": 9.0, "status": "error"}
         self.assertEqual(usable_value(datum, 2.0), 2.0)
+
+    def test_parse_official_three_hour_product_uses_latest_timestamp(self) -> None:
+        payload = [
+            ["time_tag", "Kp", "a_running", "station_count"],
+            ["2026-07-30 15:00:00.000", "1.67", "6", "8"],
+            ["2026-07-30 18:00:00.000", "1.33", "5", "8"],
+        ]
+        value, timestamp, metadata = _parse_noaa_3h(payload)
+        self.assertEqual(value, 1.33)
+        self.assertTrue(timestamp.startswith("2026-07-30T18:00:00"))
+        self.assertEqual(metadata["product"], "official_3_hour_kp")
+        self.assertEqual(metadata["station_count"], "8")
+
+    def test_parse_one_minute_product_prefers_estimated_kp(self) -> None:
+        payload = [
+            {"time_tag": "2026-07-30T21:47:00", "kp_index": 0.0, "estimated_kp": 1.67},
+            {"time_tag": "2026-07-30T21:48:00", "kp_index": 0.0, "estimated_kp": 2.0},
+        ]
+        value, timestamp, metadata = _parse_noaa_1m(payload)
+        self.assertEqual(value, 2.0)
+        self.assertEqual(timestamp, "2026-07-30T21:48:00")
+        self.assertEqual(metadata["field_used"], "estimated_kp")
+
+    @patch("earth_data._get_json")
+    def test_geomagnetic_kp_falls_back_to_one_minute_product(self, get_json) -> None:
+        get_json.side_effect = [
+            RuntimeError("3-hour unavailable"),
+            [{"time_tag": "2026-07-30T21:48:00", "kp_index": 0.0, "estimated_kp": 1.67}],
+        ]
+        datum = geomagnetic_kp().to_dict()
+        self.assertEqual(datum["status"], "ok")
+        self.assertEqual(datum["method"], "fetched_fallback")
+        self.assertEqual(datum["value"], 1.67)
+        self.assertIn("3-hour product", datum["error"])
 
 
 if __name__ == "__main__":
