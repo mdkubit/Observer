@@ -105,27 +105,51 @@ def weather(latitude: float, longitude: float) -> Datum:
 
 
 def _parse_noaa_3h(payload: Any) -> tuple[float, str, dict[str, Any]]:
-    if not isinstance(payload, list) or len(payload) < 2:
+    """Parse NOAA's official 3-hour product in either known JSON shape.
+
+    NOAA currently serves object records such as
+    {"time_tag": "...", "Kp": "1.33", ...}, while some archived/product
+    variants use a header row followed by value rows. Observer accepts both
+    shapes and selects the newest record explicitly by timestamp.
+    """
+    if not isinstance(payload, list) or not payload:
         raise ValueError("NOAA 3-hour Kp product returned no records")
-    header = payload[0]
-    if not isinstance(header, list):
-        raise ValueError("NOAA 3-hour Kp product header is missing")
-    rows = [row for row in payload[1:] if isinstance(row, list) and len(row) >= 2]
-    if not rows:
-        raise ValueError("NOAA 3-hour Kp product contains no usable rows")
-    fields = {name: index for index, name in enumerate(header)}
-    time_index = fields.get("time_tag", 0)
-    kp_index = fields.get("Kp", 1)
-    latest = max(rows, key=lambda row: str(row[time_index]))
-    value = float(latest[kp_index])
+
+    if all(isinstance(item, dict) for item in payload):
+        records = [item for item in payload if item.get("time_tag") and item.get("Kp") is not None]
+        if not records:
+            raise ValueError("NOAA 3-hour Kp product contains no usable object records")
+        latest = max(records, key=lambda item: str(item["time_tag"]))
+        value = float(latest["Kp"])
+        timestamp = str(latest["time_tag"]).replace(" ", "T")
+        metadata = {
+            "product": "official_3_hour_kp",
+            "record_shape": "objects",
+            "a_running": latest.get("a_running"),
+            "station_count": latest.get("station_count"),
+        }
+    else:
+        if len(payload) < 2 or not isinstance(payload[0], list):
+            raise ValueError("NOAA 3-hour Kp product has an unsupported record shape")
+        header = payload[0]
+        rows = [row for row in payload[1:] if isinstance(row, list) and len(row) >= 2]
+        if not rows:
+            raise ValueError("NOAA 3-hour Kp product contains no usable row records")
+        fields = {name: index for index, name in enumerate(header)}
+        time_index = fields.get("time_tag", 0)
+        kp_index = fields.get("Kp", 1)
+        latest = max(rows, key=lambda row: str(row[time_index]))
+        value = float(latest[kp_index])
+        timestamp = str(latest[time_index]).replace(" ", "T")
+        metadata = {
+            "product": "official_3_hour_kp",
+            "record_shape": "header_rows",
+            "a_running": latest[fields["a_running"]] if "a_running" in fields and len(latest) > fields["a_running"] else None,
+            "station_count": latest[fields["station_count"]] if "station_count" in fields and len(latest) > fields["station_count"] else None,
+        }
+
     if not 0.0 <= value <= 9.0:
         raise ValueError(f"NOAA 3-hour Kp value out of range: {value}")
-    timestamp = str(latest[time_index]).replace(" ", "T")
-    metadata = {
-        "product": "official_3_hour_kp",
-        "a_running": latest[fields["a_running"]] if "a_running" in fields and len(latest) > fields["a_running"] else None,
-        "station_count": latest[fields["station_count"]] if "station_count" in fields and len(latest) > fields["station_count"] else None,
-    }
     return value, timestamp, metadata
 
 
