@@ -41,7 +41,7 @@ class EarthDataTests(unittest.TestCase):
         datum = {"value": 9.0, "status": "error"}
         self.assertEqual(usable_value(datum, 2.0), 2.0)
 
-    def test_parse_official_three_hour_product_uses_latest_timestamp(self) -> None:
+    def test_parse_official_three_hour_header_rows_uses_latest_timestamp(self) -> None:
         payload = [
             ["time_tag", "Kp", "a_running", "station_count"],
             ["2026-07-30 15:00:00.000", "1.67", "6", "8"],
@@ -50,8 +50,19 @@ class EarthDataTests(unittest.TestCase):
         value, timestamp, metadata = _parse_noaa_3h(payload)
         self.assertEqual(value, 1.33)
         self.assertTrue(timestamp.startswith("2026-07-30T18:00:00"))
-        self.assertEqual(metadata["product"], "official_3_hour_kp")
+        self.assertEqual(metadata["record_shape"], "header_rows")
         self.assertEqual(metadata["station_count"], "8")
+
+    def test_parse_official_three_hour_object_records_uses_latest_timestamp(self) -> None:
+        payload = [
+            {"time_tag": "2026-07-30T15:00:00", "Kp": "1.67", "a_running": "6", "station_count": "8"},
+            {"time_tag": "2026-07-30T18:00:00", "Kp": "1.33", "a_running": "5", "station_count": "8"},
+        ]
+        value, timestamp, metadata = _parse_noaa_3h(payload)
+        self.assertEqual(value, 1.33)
+        self.assertEqual(timestamp, "2026-07-30T18:00:00")
+        self.assertEqual(metadata["record_shape"], "objects")
+        self.assertEqual(metadata["a_running"], "5")
 
     def test_parse_one_minute_product_prefers_estimated_kp(self) -> None:
         payload = [
@@ -62,6 +73,17 @@ class EarthDataTests(unittest.TestCase):
         self.assertEqual(value, 2.0)
         self.assertEqual(timestamp, "2026-07-30T21:48:00")
         self.assertEqual(metadata["field_used"], "estimated_kp")
+
+    @patch("earth_data._get_json")
+    def test_geomagnetic_kp_prefers_official_object_product(self, get_json) -> None:
+        get_json.return_value = [
+            {"time_tag": "2026-07-30T18:00:00", "Kp": "1.33", "a_running": "5", "station_count": "8"}
+        ]
+        datum = geomagnetic_kp().to_dict()
+        self.assertEqual(datum["status"], "ok")
+        self.assertEqual(datum["method"], "fetched")
+        self.assertEqual(datum["value"], 1.33)
+        self.assertEqual(datum["metadata"]["record_shape"], "objects")
 
     @patch("earth_data._get_json")
     def test_geomagnetic_kp_falls_back_to_one_minute_product(self, get_json) -> None:
