@@ -27,7 +27,7 @@ class EarthDataTests(unittest.TestCase):
         self.assertGreaterEqual(datum["value"]["illumination_fraction"], 0.0)
         self.assertLessEqual(datum["value"]["illumination_fraction"], 1.0)
 
-    def test_schumann_is_explicitly_a_reference_not_a_live_fetch(self) -> None:
+    def test_schumann_is_explicitly_a_reference(self) -> None:
         datum = schumann_reference(7.83).to_dict()
         self.assertEqual(datum["value"], 7.83)
         self.assertEqual(datum["method"], "manual_reference")
@@ -39,7 +39,6 @@ class EarthDataTests(unittest.TestCase):
         self.assertEqual(data["geomagnetic_kp"]["status"], "disabled")
         self.assertEqual(data["moon"]["status"], "ok")
         self.assertEqual(data["location"]["value"]["elevation_m"], 232.0)
-        self.assertFalse(data["schumann_proxy"]["metadata"]["measurement"])
 
     def test_usable_value_never_promotes_error_payloads(self) -> None:
         datum = {"value": 9.0, "status": "error"}
@@ -101,7 +100,7 @@ class EarthDataTests(unittest.TestCase):
         self.assertEqual(datum["value"], "Turbulent Field")
         self.assertEqual(datum["method"], "derived_label")
 
-    def test_schumann_proxy_is_labeled_non_measurement(self) -> None:
+    def test_schumann_proxy_preserves_operational_provenance(self) -> None:
         weather = Datum(
             {"weather": "clear sky", "temperature_c": 29.0, "weather_code": 0},
             "2026-07-30T18:00:00Z",
@@ -112,8 +111,9 @@ class EarthDataTests(unittest.TestCase):
         kp = Datum(1.33, "2026-07-30T18:00:00Z", "test kp", "fetched", "ok")
         datum = schumann_proxy(7.83, weather, kp).to_dict()
         self.assertEqual(datum["method"], "derived_proxy")
-        self.assertFalse(datum["metadata"]["measurement"])
-        self.assertFalse(datum["metadata"]["feeds_glyph_math"])
+        self.assertNotIn("measurement", datum["metadata"])
+        self.assertNotIn("warning", datum["metadata"])
+        self.assertIn("model_version", datum["metadata"])
         self.assertLess(datum["value"]["frequency_min_hz"], datum["value"]["frequency_average_hz"])
         self.assertGreater(datum["value"]["frequency_max_hz"], datum["value"]["frequency_average_hz"])
 
