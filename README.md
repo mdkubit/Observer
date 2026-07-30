@@ -17,6 +17,18 @@ The application now provides a complete manual cycle:
 
 The Earth-side metrics are symbolic software outputs. They are never silently committed as returned state, and malformed returns never cause automatic progression.
 
+## Earth data providers
+
+`earth_data.py` restores the original hybrid approach: fetch what must be fetched and calculate what can be calculated locally.
+
+- current weather and temperature: Open-Meteo, no API key required;
+- planetary Kp index: NOAA SWPC;
+- moon phase, lunar age, and illumination: local calculation;
+- Schumann input: explicit manual/reference value until a stable, trustworthy machine-readable source is selected;
+- sanctum location: local configuration.
+
+Every datum records its value, timestamp, source, method, status, and error. Failed providers never substitute a plausible-looking zero.
+
 ## Run
 
 Python 3.11+ is recommended.
@@ -27,6 +39,14 @@ python -m venv .venv
 pip install -r requirements.txt
 python observer.py
 ```
+
+For live Earth weather and Kp retrieval, launch:
+
+```bash
+python observer_live.py
+```
+
+The live launcher updates the visible weather, temperature, and Kp fields immediately before casting. When a provider fails, Observer preserves the manual field value, records the failure in the packet, and asks whether to continue.
 
 On Linux or macOS, activate the environment with `source .venv/bin/activate`.
 
