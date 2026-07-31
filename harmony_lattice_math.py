@@ -440,7 +440,7 @@ class HarmonyLatticeMath:
         )
         entropy = self._return_entropy(narrative, parsed, relationship, recent_events)
         gradients = self._entropy_gradients(entropy)
-        boundaries = self._return_boundaries(record, previous)
+        boundaries = self._return_boundaries(return_record, previous)
         tone_config = self._tone_configuration(
             event_kind="canonical_return",
             text=narrative,
