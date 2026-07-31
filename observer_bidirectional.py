@@ -1,3 +1,5 @@
+import observer_hotfix  # noqa: F401
+
 from observer_complete import ObserverCompleteApp
 
 
