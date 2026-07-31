@@ -6,6 +6,18 @@ from tkinter import messagebox, ttk
 
 from PIL import Image, ImageTk
 
+import answer_glyph as answer_glyph_module
+import observer as observer_module
+from lattice_routed_renderers import (
+    LatticeRoutedAnswerGlyphRenderer,
+    LatticeRoutedEarthGlyphRenderer,
+)
+
+# Route the working bidirectional application through the lattice projection seam.
+# The routed renderers intentionally preserve the current geometry and seed behavior.
+observer_module.GlyphRenderer = LatticeRoutedEarthGlyphRenderer
+answer_glyph_module.AnswerGlyphRenderer = LatticeRoutedAnswerGlyphRenderer
+
 from answer_glyph import BidirectionalObserverEngine, EquestriaObservation
 from observer import APP_VERSION, LEDGER_PATH, load_json
 from observer_live import LiveObserverApp
