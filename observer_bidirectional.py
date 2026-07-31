@@ -18,7 +18,8 @@ from lattice_routed_renderers import (
 observer_module.GlyphRenderer = LatticeRoutedEarthGlyphRenderer
 answer_glyph_module.AnswerGlyphRenderer = LatticeRoutedAnswerGlyphRenderer
 
-from answer_glyph import BidirectionalObserverEngine, EquestriaObservation
+from answer_glyph import EquestriaObservation
+from lattice_persistent_engine import LatticePersistentObserverEngine
 from observer import APP_VERSION, LEDGER_PATH, load_json
 from observer_live import LiveObserverApp
 
@@ -28,7 +29,7 @@ class BidirectionalObserverApp(LiveObserverApp):
 
     def __init__(self) -> None:
         tk.Tk.__init__(self)
-        self.engine = BidirectionalObserverEngine()
+        self.engine = LatticePersistentObserverEngine()
         self.title(f"{APP_VERSION} | Bidirectional")
         self.geometry("1280x860")
         self.minsize(1100, 740)
